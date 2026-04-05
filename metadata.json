@@ -1,0 +1,5 @@
+{
+  "name": "Pandafun - PDF Editor",
+  "description": "A powerful and fun PDF editing tool built with Node.js, Express, and EJS.",
+  "requestFramePermissions": []
+}

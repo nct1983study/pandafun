@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pandafun - Chỉnh sửa PDF dễ dàng</title>
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .no-scroll { overflow: hidden; }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #e5e7eb;
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #d1d5db;
+        }
+        #file-list {
+            scrollbar-gutter: stable;
+            padding-top: 40px; /* Space for tooltips of the first items */
+            padding-right: 8px;
+            overflow-x: hidden;
+        }
+        .tooltip {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: max-content;
+            background-color: #000000;
+            color: white;
+            text-align: center;
+            border-radius: 6px;
+            padding: 6px 12px;
+            position: absolute;
+            z-index: 10000;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%) translateY(8px);
+            opacity: 0;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            font-size: 11px;
+            font-weight: 600;
+            pointer-events: none;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            white-space: nowrap;
+        }
+        /* Tooltip for elements on the right side to avoid clipping */
+        .tooltip-right .tooltiptext {
+            left: auto !important;
+            right: 0 !important;
+            transform: translateY(8px) !important;
+        }
+        .tooltip-right .tooltiptext::after {
+            left: auto !important;
+            right: 10px !important;
+            margin-left: 0 !important;
+        }
+        .tooltip .tooltiptext::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #000000 transparent transparent transparent;
+        }
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+        .tooltip-right:hover .tooltiptext {
+            transform: translateY(0) !important;
+        }
+        #toast-container {
+            position: fixed;
+            bottom: 32px;
+            right: 32px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            align-items: flex-end;
+            pointer-events: none;
+        }
+        .toast {
+            background: #f3f4f6;
+            border: 1px solid #ef4444;
+            padding: 12px 16px;
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            width: 340px;
+            pointer-events: auto;
+            animation: toastSlideIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+            position: relative;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        /* Stacking logic: only if more than 3, stack at the top */
+        .toast:nth-last-child(n+4) {
+            margin-bottom: -60px;
+            transform: scale(0.94) translateY(10px);
+            opacity: 0.5;
+            filter: blur(1px);
+            z-index: -1;
+            pointer-events: none;
+        }
+        #toast-container:hover .toast {
+            margin-bottom: 0;
+            transform: scale(1) translateY(0);
+            opacity: 1;
+            filter: none;
+            z-index: 1;
+            pointer-events: auto;
+        }
+        @keyframes toastSlideIn {
+            from { transform: translateX(100%) translateY(20px); opacity: 0; }
+            to { transform: translateX(0) translateY(0); opacity: 1; }
+        }
+        .toast-exit {
+            animation: toastSlideOut 0.3s ease-in forwards;
+        }
+        @keyframes toastSlideOut {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(100%); opacity: 0; }
+        }
+        .toast-filename {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            word-break: break-all;
+            line-height: 1.4;
+            color: #4b5563;
+            font-size: 13px;
+        }
+        .toast-countdown {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 2px;
+            background: #ef4444;
+            width: 100%;
+            transform-origin: left;
+            border-radius: 0 0 12px 12px;
+        }
+        @keyframes countdown {
+            from { transform: scaleX(1); }
+            to { transform: scaleX(0); }
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .animate-spin-slow {
+            animation: spin 2s linear infinite;
+        }
+        .fade-in {
+            animation: fadeIn 0.4s ease forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to { opacity: 1; transform: scale(1); }
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Toolbar -->
+    <nav class="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between sticky top-0 z-50">
+        <div class="flex items-center space-x-2">
+            <div class="w-10 h-10 bg-black rounded-full flex items-center justify-center text-white text-2xl">🐼</div>
+            <span class="text-2xl font-bold tracking-tight">Pandafun</span>
+        </div>
+        
+        <div class="hidden md:flex items-center space-x-6">
+            <button class="text-gray-600 hover:text-black font-medium">Tìm kiếm</button>
+            
+            <!-- Dropdown Công cụ -->
+            <div class="relative group">
+                <button class="text-gray-600 group-hover:text-black font-medium flex items-center space-x-1 py-2">
+                    <span>Công cụ</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down transition-transform group-hover:rotate-180"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+                
+                <!-- Dropdown Menu -->
+                <div class="absolute left-0 top-full pt-2 w-64 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-[110]">
+                    <div class="bg-white border border-gray-100 rounded-xl shadow-xl overflow-hidden p-2">
+                        <div class="grid grid-cols-1 gap-1">
+                            <% tools.forEach(tool => { %>
+                                <a href="#" onclick="openModal('<%= tool.id %>')" class="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 transition-colors group/item">
+                                    <div class="bg-gray-50 text-black <%= tool.hoverBg %> <%= tool.hoverText %> w-8 h-8 rounded-md flex items-center justify-center shrink-0 transition-colors">
+                                        <div class="scale-75"><%- tool.icon %></div>
+                                    </div>
+                                    <span class="text-sm font-semibold text-gray-700 group-hover/item:text-black"><%= tool.title %></span>
+                                </a>
+                            <% }) %>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <button class="text-gray-600 hover:text-black font-medium">Giá cả</button>
+            <button class="bg-black text-white px-5 py-2 rounded-lg font-semibold hover:bg-gray-800 transition-colors">Đăng nhập</button>
+        </div>
+        
+        <!-- Mobile Menu Icon (Placeholder) -->
+        <div class="md:hidden">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
+            </svg>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <header class="max-w-7xl mx-auto px-4 py-12 text-center">
+        <h1 class="text-4xl font-extrabold text-gray-900 mb-4 tracking-tight">Mọi công cụ PDF bạn cần</h1>
+        <p class="text-lg text-gray-600 max-w-2xl mx-auto">Pandafun giúp bạn gộp, tách, nén và chuyển đổi PDF một cách nhanh chóng và hoàn toàn miễn phí.</p>
+    </header>
+
+    <!-- Tools Grid -->
+    <main class="max-w-7xl mx-auto px-4 pb-24">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <% tools.forEach(tool => { %>
+                <div onclick="openModal('<%= tool.id %>')" class="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer group">
+                    <div class="flex flex-col space-y-4">
+                        <div class="flex items-center space-x-4">
+                            <div class="<%= tool.color %> <%= tool.textColor %> w-12 h-12 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                                <%- tool.icon %>
+                            </div>
+                            <h3 class="text-xl font-bold text-gray-900"><%= tool.title %></h3>
+                        </div>
+                        <p class="text-gray-500 leading-relaxed"><%= tool.subtitle %></p>
+                    </div>
+                </div>
+            <% }) %>
+        </div>
+    </main>
+
+    <!-- Main Modal -->
+    <div id="modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-[100] p-4">
+        <div class="bg-white w-full max-w-lg h-[480px] rounded-2xl p-4 relative shadow-2xl flex flex-col overflow-hidden transition-all duration-300">
+            <button onclick="closeModal()" class="absolute top-4 right-4 text-gray-400 hover:text-black transition-colors z-10">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+            
+            <h2 id="modal-title" class="text-base font-bold mb-2 shrink-0">Gộp PDF</h2>
+            
+            <div id="modal-content" class="flex-1 flex flex-col min-h-0 space-y-2">
+                <div id="modal-working-area" class="flex-1 flex flex-col min-h-0 gap-3">
+                    <div id="files-container" class="flex-1 flex flex-col min-h-0 space-y-3">
+                        <!-- Dropzone (Smaller) -->
+                        <div id="dropzone" class="border-2 border-dashed border-gray-200 rounded-xl p-3 text-center hover:border-black transition-all cursor-pointer group bg-gray-50/50 shrink-0" onclick="document.getElementById('file-input').click()">
+                            <div class="w-6 h-6 bg-white rounded-full flex items-center justify-center mx-auto mb-1 shadow-sm group-hover:scale-110 transition-transform">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-gray-400 group-hover:text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                                </svg>
+                            </div>
+                            <p class="text-xs text-gray-600 font-medium">Kéo thả hoặc nhấn để chọn tệp PDF</p>
+                            <input id="file-input" type="file" name="pdfs" multiple accept="application/pdf" class="hidden" onchange="handleFiles(this.files)">
+                        </div>
+
+                        <!-- File List Container (Scrollable) -->
+                        <div id="file-list" class="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar min-h-0">
+                            <!-- File items will be injected here -->
+                        </div>
+                    </div>
+
+                    <!-- Vertical Separator (Hidden by default) -->
+                    <div id="modal-separator" class="hidden md:block w-px bg-gray-100 shrink-0"></div>
+
+                    <!-- Split Options (Hidden by default) -->
+                    <div id="split-options" class="hidden w-full md:w-56 space-y-2 shrink-0 flex flex-col">
+                        <div class="space-y-2">
+                            <!-- Option 1: Split All -->
+                            <div class="border-2 border-gray-100 rounded-2xl p-2 transition-all hover:border-gray-300 has-[:checked]:border-black has-[:checked]:ring-4 has-[:checked]:ring-black/5">
+                                <label class="relative flex items-center cursor-pointer group">
+                                    <input type="radio" name="split-mode" value="all" checked class="hidden peer">
+                                    <div class="w-3.5 h-3.5 border-2 border-gray-300 rounded-full mr-2 peer-checked:border-black peer-checked:border-[4px] transition-all"></div>
+                                    <div class="flex flex-col">
+                                        <span class="text-xs font-bold text-gray-800">Tất cả các trang</span>
+                                        <span class="text-[10px] text-gray-500">Mỗi trang thành một file riêng</span>
+                                    </div>
+                                </label>
+                            </div>
+                            
+                            <!-- Option 2: Split Range (Grouped with Input) -->
+                            <div class="border-2 border-gray-100 rounded-2xl p-2 space-y-2 transition-all hover:border-gray-300 has-[:checked]:border-black has-[:checked]:ring-4 has-[:checked]:ring-black/5 focus-within:border-black focus-within:ring-4 focus-within:ring-black/5">
+                                <label class="relative flex items-center cursor-pointer group">
+                                    <input type="radio" name="split-mode" value="range" class="hidden peer">
+                                    <div class="w-3.5 h-3.5 border-2 border-gray-300 rounded-full mr-2 peer-checked:border-black peer-checked:border-[4px] transition-all"></div>
+                                    <div class="flex flex-col">
+                                        <span class="text-xs font-bold text-gray-800">Khoảng trang</span>
+                                        <span class="text-[10px] text-gray-500">Trích xuất các trang cụ thể</span>
+                                    </div>
+                                </label>
+
+                                <div id="range-input-container" class="pl-5">
+                                    <input type="text" id="split-range" placeholder="Ví dụ: 1-3, 5" 
+                                        class="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none transition-all bg-gray-50 focus:bg-white focus:border-gray-300"
+                                        onfocus="document.querySelector('input[name=\'split-mode\'][value=\'range\']').checked = true">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Compress Options (Hidden by default) -->
+                    <div id="compress-options" class="hidden w-full md:w-56 space-y-3 shrink-0 flex flex-col">
+                        <div class="p-4 bg-gray-50 rounded-2xl border-2 border-gray-100 space-y-3">
+                            <div class="space-y-2">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-[10px] text-gray-500 uppercase tracking-wider">Dung lượng gốc</span>
+                                    <span id="original-total-size" class="text-xs font-mono font-bold text-gray-900">0 KB</span>
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <span class="text-[10px] text-gray-500 uppercase tracking-wider">Ước tính sau nén</span>
+                                    <span id="estimated-total-size" class="text-xs font-mono font-bold text-green-600">~0 KB</span>
+                                </div>
+                                <div class="h-1 w-full bg-gray-200 rounded-full overflow-hidden mt-1">
+                                    <div class="h-full bg-green-500 w-[40%]"></div>
+                                </div>
+                                <p class="text-[9px] text-gray-400 italic text-left leading-tight">
+                                    * Mức nén thực tế phụ thuộc vào nội dung tệp tin.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Lock Options (Hidden by default) -->
+                    <div id="lock-options" class="hidden w-full md:w-56 space-y-3 shrink-0 flex flex-col">
+                        <div class="p-4 bg-gray-50 rounded-2xl border-2 border-gray-100 space-y-4">
+                            <div class="space-y-2">
+                                <label class="text-xs font-bold text-gray-800">Mật khẩu bảo vệ</label>
+                                <div class="relative">
+                                    <input type="password" id="lock-password" placeholder="Nhập mật khẩu..." 
+                                        class="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none transition-all bg-white focus:border-black focus:ring-4 focus:ring-black/5">
+                                    <button type="button" onclick="togglePassword('lock-password')" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-black">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="space-y-2">
+                                <label class="text-xs font-bold text-gray-800">Xác nhận mật khẩu</label>
+                                <div class="relative">
+                                    <input type="password" id="lock-password-confirm" placeholder="Nhập lại mật khẩu..." 
+                                        class="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none transition-all bg-white focus:border-black focus:ring-4 focus:ring-black/5">
+                                    <button type="button" onclick="togglePassword('lock-password-confirm')" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-black">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <p class="text-[9px] text-gray-400 italic text-left leading-tight">
+                                * Ghi nhớ mật khẩu của bạn. Chúng tôi không thể khôi phục nó nếu bạn quên.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Unlock Options (Hidden by default) -->
+                    <div id="unlock-options" class="hidden w-full md:w-56 space-y-3 shrink-0 flex flex-col">
+                        <div class="p-4 bg-gray-50 rounded-2xl border-2 border-gray-100 space-y-4">
+                            <div class="space-y-2">
+                                <label class="text-xs font-bold text-gray-800">Mật khẩu hiện tại</label>
+                                <div class="relative">
+                                    <input type="password" id="unlock-password" placeholder="Nhập mật khẩu để mở..." 
+                                        class="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none transition-all bg-white focus:border-black focus:ring-4 focus:ring-black/5">
+                                    <button type="button" onclick="togglePassword('unlock-password')" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-black">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <p class="text-[9px] text-gray-400 italic text-left leading-tight">
+                                * Nhập mật khẩu chính xác để gỡ bỏ lớp bảo vệ khỏi tệp PDF.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Word Options (Hidden by default) -->
+                    <div id="word-options" class="hidden w-full md:w-56 space-y-3 shrink-0 flex flex-col">
+                        <div class="p-4 bg-gray-50 rounded-2xl border-2 border-gray-100 space-y-3">
+                            <div class="flex items-center space-x-2 text-blue-600">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                <span class="text-xs font-bold uppercase tracking-wider">PDF sang Word</span>
+                            </div>
+                            <p class="text-[10px] text-gray-500 leading-relaxed">
+                                Chuyển đổi nội dung văn bản từ PDF sang định dạng Word (.docx) có thể chỉnh sửa.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Rotate Options (Hidden by default) -->
+                    <div id="rotate-options" class="hidden w-full md:w-56 space-y-3 shrink-0 flex flex-col">
+                        <div class="p-4 bg-gray-50 rounded-2xl border-2 border-gray-100 space-y-4">
+                            <div class="space-y-2">
+                                <label class="text-xs font-bold text-gray-800">Góc xoay</label>
+                                <select id="rotate-angle" class="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none transition-all bg-white focus:border-black focus:ring-4 focus:ring-black/5">
+                                    <option value="90">90° Phải</option>
+                                    <option value="180">180°</option>
+                                    <option value="270">90° Trái</option>
+                                </select>
+                            </div>
+                            <p class="text-[9px] text-gray-400 italic text-left leading-tight">
+                                * Toàn bộ các trang trong tệp PDF sẽ được xoay theo góc đã chọn.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Button Container -->
+                <div id="action-container" class="pt-3 border-t shrink-0">
+                    <button id="process-btn" disabled onclick="startProcessing()" class="w-full bg-black text-white py-2.5 rounded-xl font-bold hover:bg-gray-800 transition-all disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed shadow-lg shadow-black/5 text-sm">Xử lý</button>
+                    
+                    <!-- Post-processing buttons (Hidden by default) -->
+                    <div id="post-process-actions" class="hidden flex flex-col space-y-2 w-full">
+                        <div class="grid grid-cols-2 gap-2">
+                            <button onclick="resetModal()" class="flex items-center justify-center space-x-2 bg-gray-100 text-gray-700 py-2.5 rounded-xl font-bold hover:bg-gray-200 transition-all text-sm">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                                <span>Thực hiện mới</span>
+                            </button>
+                            <button onclick="previewResult()" class="flex items-center justify-center space-x-2 bg-gray-100 text-gray-700 py-2.5 rounded-xl font-bold hover:bg-gray-200 transition-all text-sm">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                                <span>Xem kết quả</span>
+                            </button>
+                        </div>
+                        <button onclick="downloadResult()" class="w-full flex items-center justify-center space-x-2 bg-black text-white py-2.5 rounded-xl font-bold hover:bg-gray-800 transition-all shadow-lg shadow-black/10 text-sm">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                            <span id="download-btn-text">Tải xuống tệp đã gộp</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preview Modal -->
+    <div id="preview-modal" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-[200] p-4">
+        <div class="bg-white w-full max-w-5xl h-[90vh] rounded-2xl relative flex flex-col overflow-hidden">
+            <div class="p-4 border-b flex items-center justify-between">
+                <h3 id="preview-filename" class="font-bold text-gray-900 truncate pr-4">Xem trước file</h3>
+                <button onclick="closePreview()" class="text-gray-400 hover:text-black transition-colors shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div class="flex-1 bg-gray-100 relative">
+                <iframe id="preview-frame" class="w-full h-full border-none"></iframe>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedFiles = [];
+        let isProcessing = false;
+        let currentTool = null;
+        let lastDeletedFile = null;
+        let toastTimeout = null;
+
+        let mergedPdfUrl = null;
+
+        function showToast(message, filename, undoAction = null) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            
+            let undoBtn = '';
+            if (undoAction) {
+                undoBtn = `
+                    <div class="tooltip tooltip-right w-8 h-8">
+                        <button onclick="this.closest('.toast').remove(); ${undoAction}" class="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all active:scale-90">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                        </button>
+                        <span class="tooltiptext">Hoàn tác</span>
+                    </div>
+                `;
+            }
+
+            toast.innerHTML = `
+                <div class="flex items-start space-x-3 w-full">
+                    <div class="text-red-500 mt-0.5 shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center justify-between mb-1">
+                            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest truncate mr-2">ĐÃ XÓA TẬP TIN</p>
+                            <div class="flex items-center space-x-1 shrink-0">
+                                ${undoBtn}
+                                <div class="tooltip tooltip-right w-8 h-8">
+                                    <button onclick="this.closest('.toast').remove()" class="p-1.5 text-gray-400 hover:text-black hover:bg-gray-200 rounded-lg transition-all active:scale-90">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                    </button>
+                                    <span class="tooltiptext">Đóng</span>
+                                </div>
+                            </div>
+                        </div>
+                        <p class="toast-filename font-bold text-gray-700 leading-tight">${filename}</p>
+                    </div>
+                </div>
+                <div class="toast-countdown" style="animation: countdown 5s linear forwards"></div>
+            `;
+
+            container.appendChild(toast);
+            
+            // Auto remove after 5s
+            const timeoutId = setTimeout(() => {
+                if (toast.parentElement) {
+                    toast.classList.add('toast-exit');
+                    setTimeout(() => {
+                        toast.remove();
+                    }, 400);
+                }
+            }, 5000);
+
+            // Cancel timeout if manually closed
+            const closeBtn = toast.querySelector('button[onclick*="remove()"]');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', () => {
+                    clearTimeout(timeoutId);
+                });
+            }
+        }
+
+        function openModal(toolId) {
+            currentTool = toolId;
+            const modal = document.getElementById('modal');
+            const modalContainer = modal.querySelector('.bg-white');
+            const modalTitle = document.getElementById('modal-title');
+            const fileInput = document.getElementById('file-input');
+            const splitOptions = document.getElementById('split-options');
+            const compressOptions = document.getElementById('compress-options');
+            const lockOptions = document.getElementById('lock-options');
+            const unlockOptions = document.getElementById('unlock-options');
+            const wordOptions = document.getElementById('word-options');
+            const rotateOptions = document.getElementById('rotate-options');
+            const workingArea = document.getElementById('modal-working-area');
+            const separator = document.getElementById('modal-separator');
+
+            // Hide all options first
+            splitOptions.classList.add('hidden');
+            compressOptions.classList.add('hidden');
+            lockOptions.classList.add('hidden');
+            unlockOptions.classList.add('hidden');
+            wordOptions.classList.add('hidden');
+            rotateOptions.classList.add('hidden');
+            separator.classList.add('hidden');
+
+            // Set modal width based on tool
+            if (toolId === 'merge') {
+                modalTitle.textContent = 'Gộp PDF';
+                fileInput.multiple = true;
+                modalContainer.classList.remove('max-w-2xl');
+                modalContainer.classList.add('max-w-lg');
+                workingArea.classList.remove('md:flex-row');
+            } else if (toolId === 'split') {
+                modalTitle.textContent = 'Tách PDF';
+                fileInput.multiple = false;
+                splitOptions.classList.remove('hidden');
+                separator.classList.remove('hidden');
+                modalContainer.classList.remove('max-w-lg');
+                modalContainer.classList.add('max-w-2xl');
+                workingArea.classList.add('md:flex-row');
+            } else if (toolId === 'compress') {
+                modalTitle.textContent = 'Nén PDF';
+                fileInput.multiple = true;
+                compressOptions.classList.remove('hidden');
+                separator.classList.remove('hidden');
+                modalContainer.classList.remove('max-w-lg');
+                modalContainer.classList.add('max-w-2xl');
+                workingArea.classList.add('md:flex-row');
+            } else if (toolId === 'lock') {
+                modalTitle.textContent = 'Khóa PDF';
+                fileInput.multiple = false;
+                lockOptions.classList.remove('hidden');
+                separator.classList.remove('hidden');
+                modalContainer.classList.remove('max-w-lg');
+                modalContainer.classList.add('max-w-2xl');
+                workingArea.classList.add('md:flex-row');
+            } else if (toolId === 'unlock') {
+                modalTitle.textContent = 'Mở khóa PDF';
+                fileInput.multiple = false;
+                unlockOptions.classList.remove('hidden');
+                separator.classList.remove('hidden');
+                modalContainer.classList.remove('max-w-lg');
+                modalContainer.classList.add('max-w-2xl');
+                workingArea.classList.add('md:flex-row');
+            } else if (toolId === 'word') {
+                modalTitle.textContent = 'PDF sang Word';
+                fileInput.multiple = false;
+                wordOptions.classList.remove('hidden');
+                separator.classList.remove('hidden');
+                modalContainer.classList.remove('max-w-lg');
+                modalContainer.classList.add('max-w-2xl');
+                workingArea.classList.add('md:flex-row');
+            } else if (toolId === 'rotate') {
+                modalTitle.textContent = 'Xoay PDF';
+                fileInput.multiple = false;
+                rotateOptions.classList.remove('hidden');
+                separator.classList.remove('hidden');
+                modalContainer.classList.remove('max-w-lg');
+                modalContainer.classList.add('max-w-2xl');
+                workingArea.classList.add('md:flex-row');
+            } else {
+                alert('Chức năng này đang được phát triển.');
+                return;
+            }
+
+            const btn = document.getElementById('process-btn');
+            btn.classList.remove('hidden');
+            btn.classList.remove('invisible');
+            checkProcessButton();
+
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            document.body.classList.add('no-scroll');
+        }
+
+        function closeModal() {
+            document.getElementById('modal').classList.add('hidden');
+            document.getElementById('modal').classList.remove('flex');
+            document.body.classList.remove('no-scroll');
+            resetModal();
+        }
+
+        function resetModal() {
+            if (mergedPdfUrl) {
+                window.URL.revokeObjectURL(mergedPdfUrl);
+                mergedPdfUrl = null;
+            }
+            selectedFiles = [];
+            isProcessing = false;
+            
+            const modal = document.getElementById('modal');
+            const modalContainer = modal.querySelector('.bg-white');
+            const workingArea = document.getElementById('modal-working-area');
+            const splitOptions = document.getElementById('split-options');
+            const compressOptions = document.getElementById('compress-options');
+            const lockOptions = document.getElementById('lock-options');
+            const unlockOptions = document.getElementById('unlock-options');
+            const wordOptions = document.getElementById('word-options');
+            const rotateOptions = document.getElementById('rotate-options');
+            const separator = document.getElementById('modal-separator');
+
+            // Reset split options
+            const splitModeAll = document.querySelector('input[name="split-mode"][value="all"]');
+            if (splitModeAll) splitModeAll.checked = true;
+            const splitRange = document.getElementById('split-range');
+            if (splitRange) splitRange.value = '';
+
+            // Reset lock options
+            const lockPassword = document.getElementById('lock-password');
+            if (lockPassword) lockPassword.value = '';
+            const lockPasswordConfirm = document.getElementById('lock-password-confirm');
+            if (lockPasswordConfirm) lockPasswordConfirm.value = '';
+
+            // Reset unlock options
+            const unlockPassword = document.getElementById('unlock-password');
+            if (unlockPassword) unlockPassword.value = '';
+
+            // Reset rotate options
+            const rotateAngle = document.getElementById('rotate-angle');
+            if (rotateAngle) rotateAngle.value = '90';
+
+            // Maintain modal width based on tool
+            if (currentTool === 'split') {
+                modalContainer.classList.remove('max-w-lg');
+                modalContainer.classList.add('max-w-2xl');
+                workingArea.classList.add('md:flex-row');
+                splitOptions.classList.remove('hidden');
+                compressOptions.classList.add('hidden');
+                lockOptions.classList.add('hidden');
+                unlockOptions.classList.add('hidden');
+                wordOptions.classList.add('hidden');
+                rotateOptions.classList.add('hidden');
+                separator.classList.remove('hidden');
+            } else if (currentTool === 'compress') {
+                modalContainer.classList.remove('max-w-lg');
+                modalContainer.classList.add('max-w-2xl');
+                workingArea.classList.add('md:flex-row');
+                splitOptions.classList.add('hidden');
+                compressOptions.classList.remove('hidden');
+                lockOptions.classList.add('hidden');
+                unlockOptions.classList.add('hidden');
+                wordOptions.classList.add('hidden');
+                rotateOptions.classList.add('hidden');
+                separator.classList.remove('hidden');
+            } else if (currentTool === 'lock') {
+                modalContainer.classList.remove('max-w-lg');
+                modalContainer.classList.add('max-w-2xl');
+                workingArea.classList.add('md:flex-row');
+                splitOptions.classList.add('hidden');
+                compressOptions.classList.add('hidden');
+                lockOptions.classList.remove('hidden');
+                unlockOptions.classList.add('hidden');
+                wordOptions.classList.add('hidden');
+                rotateOptions.classList.add('hidden');
+                separator.classList.remove('hidden');
+            } else if (currentTool === 'unlock') {
+                modalContainer.classList.remove('max-w-lg');
+                modalContainer.classList.add('max-w-2xl');
+                workingArea.classList.add('md:flex-row');
+                splitOptions.classList.add('hidden');
+                compressOptions.classList.add('hidden');
+                lockOptions.classList.add('hidden');
+                unlockOptions.classList.remove('hidden');
+                wordOptions.classList.add('hidden');
+                rotateOptions.classList.add('hidden');
+                separator.classList.remove('hidden');
+            } else if (currentTool === 'word') {
+                modalContainer.classList.remove('max-w-lg');
+                modalContainer.classList.add('max-w-2xl');
+                workingArea.classList.add('md:flex-row');
+                splitOptions.classList.add('hidden');
+                compressOptions.classList.add('hidden');
+                lockOptions.classList.add('hidden');
+                unlockOptions.classList.add('hidden');
+                wordOptions.classList.remove('hidden');
+                rotateOptions.classList.add('hidden');
+                separator.classList.remove('hidden');
+            } else if (currentTool === 'rotate') {
+                modalContainer.classList.remove('max-w-lg');
+                modalContainer.classList.add('max-w-2xl');
+                workingArea.classList.add('md:flex-row');
+                splitOptions.classList.add('hidden');
+                compressOptions.classList.add('hidden');
+                lockOptions.classList.add('hidden');
+                unlockOptions.classList.add('hidden');
+                wordOptions.classList.add('hidden');
+                rotateOptions.classList.remove('hidden');
+                separator.classList.remove('hidden');
+            } else {
+                modalContainer.classList.remove('max-w-2xl');
+                modalContainer.classList.add('max-w-lg');
+                workingArea.classList.remove('md:flex-row');
+                splitOptions.classList.add('hidden');
+                compressOptions.classList.add('hidden');
+                lockOptions.classList.add('hidden');
+                unlockOptions.classList.add('hidden');
+                wordOptions.classList.add('hidden');
+                rotateOptions.classList.add('hidden');
+                separator.classList.add('hidden');
+            }
+
+            const dropzone = document.getElementById('dropzone');
+            const btn = document.getElementById('process-btn');
+            btn.classList.remove('hidden');
+            btn.classList.remove('invisible');
+            btn.disabled = true;
+            btn.innerHTML = 'Xử lý';
+            
+            dropzone.classList.remove('pointer-events-none');
+            dropzone.classList.remove('hidden');
+            dropzone.classList.add('border-2', 'border-dashed', 'border-gray-200');
+            dropzone.classList.remove('border-0', 'bg-transparent');
+            dropzone.innerHTML = `
+                <div class="w-10 h-10 bg-white rounded-full flex items-center justify-center mx-auto mb-2 shadow-sm group-hover:scale-110 transition-transform">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400 group-hover:text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                </div>
+                <p class="text-sm text-gray-600 font-medium">Kéo thả hoặc nhấn để chọn tệp PDF</p>
+            `;
+            
+            document.getElementById('file-list').classList.remove('hidden');
+            document.getElementById('post-process-actions').classList.add('hidden');
+            
+            const successMsg = document.getElementById('success-message');
+            if (successMsg) successMsg.remove();
+            
+            renderFileList();
+        }
+
+        function getFileTypeInfo(filename) {
+            const ext = filename.split('.').pop().toLowerCase();
+            const types = {
+                pdf: { color: 'text-orange-500', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 15h3a2 2 0 0 1 0 4h-3V15Z"/><path d="M15 15v4"/></svg>' },
+                doc: { color: 'text-blue-500', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 12h4"/><path d="M10 16h4"/></svg>' },
+                docx: { color: 'text-blue-500', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 12h4"/><path d="M10 16h4"/></svg>' },
+                xls: { color: 'text-green-500', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 12h8"/><path d="M8 16h8"/><path d="M8 8h8"/></svg>' },
+                xlsx: { color: 'text-green-500', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 12h8"/><path d="M8 16h8"/><path d="M8 8h8"/></svg>' },
+                ppt: { color: 'text-red-500', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 12v4"/><path d="M13 12v4"/></svg>' },
+                pptx: { color: 'text-red-500', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 12v4"/><path d="M13 12v4"/></svg>' },
+                png: { color: 'text-purple-500', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>' },
+                jpg: { color: 'text-purple-500', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>' },
+                jpeg: { color: 'text-purple-500', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>' }
+            };
+            return types[ext] || { color: 'text-gray-500', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>' };
+        }
+
+        function truncateFilename(name, maxLength = 50) {
+            if (name.length <= maxLength) return name;
+            const extIndex = name.lastIndexOf('.');
+            const ext = extIndex !== -1 ? name.substring(extIndex) : '';
+            const baseName = extIndex !== -1 ? name.substring(0, extIndex) : name;
+            
+            if (baseName.length <= 25) return name; 
+
+            const start = baseName.substring(0, maxLength - 15);
+            const end = baseName.substring(baseName.length - 8);
+            return `${start}......${end}${ext}`;
+        }
+
+        function formatBytes(bytes, decimals = 1) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+
+        function togglePassword(id) {
+            const input = document.getElementById(id);
+            if (input.type === 'password') {
+                input.type = 'text';
+            } else {
+                input.type = 'password';
+            }
+        }
+
+        async function handleFiles(files) {
+            if (currentTool === 'split') {
+                if (typeof PDFLib === 'undefined') {
+                    showToast('Lỗi', 'Thư viện xử lý PDF chưa tải xong. Vui lòng thử lại sau giây lát.');
+                    return;
+                }
+                selectedFiles = []; // Only one file for split
+            } else if (currentTool === 'compress') {
+                if (typeof PDFLib === 'undefined') {
+                    showToast('Lỗi', 'Thư viện xử lý PDF chưa tải xong. Vui lòng thử lại sau giây lát.');
+                    return;
+                }
+                // Multiple files allowed for compress
+            }
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                
+                // Check page count for split tool
+                if (currentTool === 'split') {
+                    try {
+                        const { PDFDocument } = PDFLib;
+                        const arrayBuffer = await file.arrayBuffer();
+                        const pdfDoc = await PDFDocument.load(arrayBuffer);
+                        const pageCount = pdfDoc.getPageCount();
+                        if (pageCount <= 1) {
+                            showToast('Tệp này chỉ có 1 trang, không thể tách.', file.name);
+                            continue;
+                        }
+                    } catch (e) {
+                        console.error('Error loading PDF:', e);
+                        showToast('Không thể đọc tệp PDF này.', file.name);
+                        continue;
+                    }
+                }
+
+                const fileObj = {
+                    id: Math.random().toString(36).substr(2, 9),
+                    file: file,
+                    name: file.name,
+                    size: file.size,
+                    progress: 0,
+                    status: 'uploading',
+                    error: null,
+                    url: URL.createObjectURL(file)
+                };
+                selectedFiles.push(fileObj);
+                simulateUpload(fileObj);
+            }
+            renderFileList();
+        }
+
+        function simulateUpload(fileObj) {
+            let progress = 0;
+            const isError = Math.random() < 0.05; 
+            const errorAt = Math.floor(Math.random() * 80) + 10;
+
+            const interval = setInterval(() => {
+                if (isError && progress >= errorAt) {
+                    fileObj.status = 'error';
+                    fileObj.error = 'Tệp không hợp lệ hoặc bị hỏng';
+                    clearInterval(interval);
+                    updateFileUI(fileObj);
+                    return;
+                }
+
+                progress += Math.floor(Math.random() * 30) + 20; 
+                if (progress >= 100) {
+                    progress = 100;
+                    fileObj.status = 'success';
+                    clearInterval(interval);
+                    checkProcessButton();
+                }
+                fileObj.progress = progress;
+                updateFileUI(fileObj);
+            }, 50);
+        }
+
+        function removeFile(id) {
+            const index = selectedFiles.findIndex(f => f.id === id);
+            if (index !== -1) {
+                lastDeletedFile = { ...selectedFiles[index], index };
+                selectedFiles.splice(index, 1);
+                
+                const element = document.getElementById(`file-${id}`);
+                if (element) {
+                    element.style.opacity = '0';
+                    element.style.transform = 'scale(0.95) translateX(20px)';
+                    element.style.transition = 'all 0.3s ease';
+                    setTimeout(() => {
+                        element.remove();
+                        checkProcessButton();
+                    }, 300);
+                }
+                
+                showToast('Đã xóa tệp tin', lastDeletedFile.name, 'undoDelete()');
+            }
+        }
+
+        function undoDelete() {
+            if (lastDeletedFile) {
+                selectedFiles.splice(lastDeletedFile.index, 0, lastDeletedFile);
+                lastDeletedFile = null;
+                renderFileList();
+                checkProcessButton();
+            }
+        }
+
+        function updateFileUI(fileObj) {
+            const item = document.getElementById(`file-${fileObj.id}`);
+            if (!item) return;
+
+            const statusIcon = item.querySelector('.status-icon');
+            const actionIcon = item.querySelector('.action-icon');
+            const percentageText = item.querySelector('.percentage-text');
+
+            if (fileObj.status === 'success') {
+                statusIcon.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-500 fade-in" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                    </svg>
+                `;
+                
+                const reviewBtnHtml = `
+                    <div class="tooltip tooltip-right w-8 h-8 fade-in">
+                        <button onclick="event.stopPropagation(); window.previewFile('${fileObj.id}')" class="w-full h-full flex items-center justify-center text-gray-400 hover:text-black transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><polyline points="10 12 14 12 14 16"/><line x1="14" y1="12" x2="8" y2="18"/>
+                            </svg>
+                        </button>
+                        <span class="tooltiptext">Xem file</span>
+                    </div>
+                `;
+
+                if (percentageText) {
+                    if (fileObj.progress === 100) {
+                        // If already finished, show immediately
+                        percentageText.classList.add('hidden');
+                        actionIcon.innerHTML = reviewBtnHtml;
+                    } else {
+                        // If just finished, fade out percentage then show
+                        percentageText.style.transition = 'opacity 0.4s ease';
+                        percentageText.style.opacity = '0';
+                        setTimeout(() => {
+                            percentageText.classList.add('hidden');
+                            actionIcon.innerHTML = reviewBtnHtml;
+                        }, 400);
+                    }
+                }
+            } else if (fileObj.status === 'error') {
+                statusIcon.innerHTML = `
+                    <div class="tooltip tooltip-right fade-in">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                        </svg>
+                        <span class="tooltiptext">${fileObj.error}</span>
+                    </div>
+                `;
+                if (percentageText) percentageText.classList.add('hidden');
+                actionIcon.innerHTML = '';
+            } else {
+                statusIcon.innerHTML = `
+                    <svg class="animate-spin h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                `;
+                if (percentageText) {
+                    percentageText.classList.remove('hidden');
+                    percentageText.style.opacity = '1';
+                    percentageText.textContent = `${fileObj.progress}%`;
+                }
+            }
+        }
+
+        function renderFileList() {
+            const list = document.getElementById('file-list');
+            list.innerHTML = '';
+            selectedFiles.forEach(fileObj => {
+                const typeInfo = getFileTypeInfo(fileObj.name);
+                const div = document.createElement('div');
+                div.id = `file-${fileObj.id}`;
+                div.className = 'flex items-center justify-between p-2 bg-gray-50 rounded-xl border border-gray-100 transition-all duration-200 group/card hover:border-gray-300 relative z-10 hover:z-20';
+                div.innerHTML = `
+                    <div class="flex items-center space-x-3 flex-1 min-w-0">
+                        <div class="file-type-icon shrink-0 w-8 h-8 ${typeInfo.color} flex items-center justify-center">
+                            ${typeInfo.icon}
+                        </div>
+                        <div class="flex flex-col min-w-0 flex-1">
+                            <p class="text-sm font-semibold text-gray-900 truncate">${truncateFilename(fileObj.name)}</p>
+                            <p class="text-[10px] text-gray-400 font-mono">${formatBytes(fileObj.size)}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center shrink-0 space-x-1 ml-auto">
+                        <div class="status-icon w-8 h-8 flex items-center justify-center"></div>
+                        <div class="relative w-8 h-8 flex items-center justify-center">
+                            <span class="percentage-text text-[10px] font-mono text-gray-400">0%</span>
+                            <div class="action-icon absolute inset-0 flex items-center justify-center"></div>
+                        </div>
+                        <div class="tooltip tooltip-right w-8 h-8">
+                            <button onclick="removeFile('${fileObj.id}')" class="p-2 text-gray-400 hover:text-red-500 transition-colors">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+                            </button>
+                            <span class="tooltiptext">Xóa file</span>
+                        </div>
+                    </div>
+                `;
+                list.appendChild(div);
+                updateFileUI(fileObj);
+            });
+            checkProcessButton();
+        }
+
+        function checkProcessButton() {
+            const btn = document.getElementById('process-btn');
+            const postActions = document.getElementById('post-process-actions');
+            
+            // Ensure button is visible if results are not shown
+            if (postActions.classList.contains('hidden')) {
+                if (!isProcessing) {
+                    btn.classList.remove('hidden');
+                    btn.classList.remove('invisible');
+                }
+            } else {
+                btn.classList.add('hidden');
+                return;
+            }
+
+            if (isProcessing) return;
+
+            if (currentTool === 'merge') {
+                const allSuccess = selectedFiles.length >= 2 && selectedFiles.every(f => f.status === 'success');
+                btn.disabled = !allSuccess;
+            } else if (currentTool === 'split') {
+                const hasFile = selectedFiles.length === 1 && selectedFiles[0].status === 'success';
+                btn.disabled = !hasFile;
+            } else if (currentTool === 'compress') {
+                const hasFile = selectedFiles.length >= 1 && selectedFiles.every(f => f.status === 'success');
+                btn.disabled = !hasFile;
+
+                // Update size info
+                const totalSize = selectedFiles.reduce((acc, f) => acc + f.size, 0);
+                const estimatedSize = totalSize * 0.6; // Estimate 40% reduction
+                document.getElementById('original-total-size').textContent = formatBytes(totalSize);
+                document.getElementById('estimated-total-size').textContent = '~' + formatBytes(estimatedSize);
+            } else if (currentTool === 'lock') {
+                const hasFile = selectedFiles.length === 1 && selectedFiles[0].status === 'success';
+                const password = document.getElementById('lock-password').value;
+                const confirm = document.getElementById('lock-password-confirm').value;
+                btn.disabled = !hasFile || !password || password !== confirm;
+            } else if (currentTool === 'unlock') {
+                const hasFile = selectedFiles.length === 1 && selectedFiles[0].status === 'success';
+                const password = document.getElementById('unlock-password').value;
+                btn.disabled = !hasFile || !password;
+            } else if (currentTool === 'word') {
+                const hasFile = selectedFiles.length === 1 && selectedFiles[0].status === 'success';
+                btn.disabled = !hasFile;
+            } else if (currentTool === 'rotate') {
+                const hasFile = selectedFiles.length === 1 && selectedFiles[0].status === 'success';
+                btn.disabled = !hasFile;
+            }
+        }
+
+        function previewFile(id) {
+            const fileObj = selectedFiles.find(f => f.id === id);
+            if (!fileObj) return;
+
+            const modal = document.getElementById('preview-modal');
+            const frame = document.getElementById('preview-frame');
+            const title = document.getElementById('preview-filename');
+
+            title.textContent = fileObj.name;
+            frame.src = fileObj.url;
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closePreview() {
+            const modal = document.getElementById('preview-modal');
+            const frame = document.getElementById('preview-frame');
+            frame.src = '';
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        async function startProcessing() {
+            if (currentTool === 'merge' && selectedFiles.length < 2) return;
+            if (currentTool === 'split' && selectedFiles.length !== 1) return;
+            
+            isProcessing = true;
+            const btn = document.getElementById('process-btn');
+            const dropzone = document.getElementById('dropzone');
+            const fileList = document.getElementById('file-list');
+            const splitOptions = document.getElementById('split-options');
+            const separator = document.getElementById('modal-separator');
+            const modalTitle = document.getElementById('modal-title').textContent;
+            
+            const modal = document.getElementById('modal');
+            const modalContainer = modal.querySelector('.bg-white');
+            const workingArea = document.getElementById('modal-working-area');
+            
+            btn.classList.add('invisible');
+            dropzone.classList.add('pointer-events-none');
+            // Keep splitOptions and separator visible if it's already visible to maintain modal size
+            if (currentTool !== 'split') {
+                splitOptions.classList.add('hidden');
+                separator.classList.add('hidden');
+            }
+            const originalDropzoneContent = dropzone.innerHTML;
+            
+            dropzone.innerHTML = `
+                <div class="flex flex-col items-center justify-center space-y-3 py-4">
+                    <svg class="animate-spin h-8 w-8 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p class="text-sm font-bold text-black">Đang xử lý...</p>
+                </div>
+            `;
+
+            try {
+                const formData = new FormData();
+                let endpoint = '/merge';
+                let downloadName = `Pandafun_Merged_${new Date().getTime()}.pdf`;
+
+                if (currentTool === 'merge') {
+                    selectedFiles.forEach(f => {
+                        formData.append('pdfs', f.file);
+                    });
+                } else if (currentTool === 'split') {
+                    endpoint = '/split';
+                    formData.append('pdf', selectedFiles[0].file);
+                    const mode = document.querySelector('input[name="split-mode"]:checked').value;
+                    formData.append('mode', mode);
+                    if (mode === 'range') {
+                        formData.append('range', document.getElementById('split-range').value);
+                    }
+                    downloadName = mode === 'all' ? `Pandafun_Split_${new Date().getTime()}.zip` : `Pandafun_Extracted_${new Date().getTime()}.pdf`;
+                } else if (currentTool === 'compress') {
+                    endpoint = '/compress';
+                    selectedFiles.forEach(f => {
+                        formData.append('pdfs', f.file);
+                    });
+                    downloadName = selectedFiles.length > 1 ? `Pandafun_Compressed_${new Date().getTime()}.zip` : `Pandafun_Compressed_${new Date().getTime()}.pdf`;
+                } else if (currentTool === 'lock') {
+                    endpoint = '/lock';
+                    formData.append('pdf', selectedFiles[0].file);
+                    formData.append('password', document.getElementById('lock-password').value);
+                    downloadName = `Pandafun_Locked_${new Date().getTime()}.pdf`;
+                } else if (currentTool === 'unlock') {
+                    endpoint = '/unlock';
+                    formData.append('pdf', selectedFiles[0].file);
+                    formData.append('password', document.getElementById('unlock-password').value);
+                    downloadName = `Pandafun_Unlocked_${new Date().getTime()}.pdf`;
+                } else if (currentTool === 'word') {
+                    endpoint = '/word';
+                    formData.append('pdf', selectedFiles[0].file);
+                    downloadName = `Pandafun_Word_${new Date().getTime()}.docx`;
+                } else if (currentTool === 'rotate') {
+                    endpoint = '/rotate';
+                    formData.append('pdf', selectedFiles[0].file);
+                    formData.append('rotation', document.getElementById('rotate-angle').value);
+                    downloadName = `Pandafun_Rotated_${new Date().getTime()}.pdf`;
+                }
+
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || 'Xử lý thất bại');
+                }
+
+                const blob = await response.blob();
+                if (mergedPdfUrl) window.URL.revokeObjectURL(mergedPdfUrl);
+                mergedPdfUrl = window.URL.createObjectURL(blob);
+
+                dropzone.innerHTML = `
+                    <div class="flex flex-col items-center justify-center space-y-2 py-4">
+                        <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center text-green-600">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        </div>
+                        <p class="text-sm font-bold text-green-600">${modalTitle} thành công!</p>
+                    </div>
+                `;
+                dropzone.classList.remove('border-dashed');
+                dropzone.classList.remove('border-2');
+                dropzone.classList.add('border-0');
+                dropzone.classList.add('bg-transparent');
+                
+                fileList.innerHTML = ''; 
+                fileList.classList.add('hidden'); 
+                
+                // Reset layout to single column for success message
+                modalContainer.classList.remove('max-w-2xl');
+                modalContainer.classList.add('max-w-lg');
+                workingArea.classList.remove('md:flex-row');
+                document.getElementById('split-options').classList.add('hidden');
+                document.getElementById('compress-options').classList.add('hidden');
+                document.getElementById('lock-options').classList.add('hidden');
+                document.getElementById('modal-separator').classList.add('hidden');
+
+                const downloadBtnText = document.getElementById('download-btn-text');
+                if (currentTool === 'merge') {
+                    downloadBtnText.textContent = 'Tải xuống tệp đã gộp';
+                } else if (currentTool === 'split') {
+                    const mode = document.querySelector('input[name="split-mode"]:checked').value;
+                    downloadBtnText.textContent = mode === 'all' ? 'Tải xuống tệp ZIP' : 'Tải xuống tệp đã tách';
+                } else if (currentTool === 'compress') {
+                    downloadBtnText.textContent = selectedFiles.length > 1 ? 'Tải xuống tệp ZIP' : 'Tải xuống tệp đã nén';
+                } else if (currentTool === 'lock') {
+                    downloadBtnText.textContent = 'Tải xuống tệp đã khóa';
+                } else if (currentTool === 'unlock') {
+                    downloadBtnText.textContent = 'Tải xuống tệp đã mở khóa';
+                } else if (currentTool === 'word') {
+                    downloadBtnText.textContent = 'Tải xuống tệp Word (.docx)';
+                } else if (currentTool === 'rotate') {
+                    downloadBtnText.textContent = 'Tải xuống tệp đã xoay';
+                }
+
+                document.getElementById('post-process-actions').classList.remove('hidden');
+                btn.classList.add('hidden');
+                btn.classList.remove('invisible');
+                
+                // Store download name for later
+                window.currentDownloadName = downloadName;
+            } catch (error) {
+                console.error(error);
+                isProcessing = false;
+                btn.classList.remove('hidden');
+                btn.classList.remove('invisible');
+                dropzone.classList.remove('pointer-events-none');
+                if (currentTool === 'split') splitOptions.classList.remove('hidden');
+                dropzone.innerHTML = originalDropzoneContent;
+                showToast('Lỗi', error.message || 'Đã xảy ra lỗi khi xử lý tệp tin.');
+            }
+        }
+
+        function previewResult() {
+            if (!mergedPdfUrl) return;
+
+            const modal = document.getElementById('preview-modal');
+            const frame = document.getElementById('preview-frame');
+            const title = document.getElementById('preview-filename');
+
+            const titleMap = {
+                'merge': 'Kết quả gộp PDF',
+                'split': 'Kết quả tách PDF',
+                'compress': 'Kết quả nén PDF',
+                'lock': 'Kết quả khóa PDF',
+                'rotate': 'Kết quả xoay PDF'
+            };
+            title.textContent = titleMap[currentTool] || 'Kết quả xử lý';
+            
+            // ZIP files cannot be previewed in iframe
+            const isZip = (currentTool === 'split' && document.querySelector('input[name="split-mode"][value="all"]').checked) || 
+                          (currentTool === 'compress' && selectedFiles.length > 1);
+
+            if (isZip) {
+                showToast('Thông báo', 'Tệp ZIP không thể xem trước. Vui lòng tải xuống.');
+                return;
+            }
+
+            if (currentTool === 'lock') {
+                showToast('Thông báo', 'Tệp đã khóa có thể yêu cầu mật khẩu để xem trước.');
+            }
+
+            frame.src = mergedPdfUrl;
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function downloadResult() {
+            if (!mergedPdfUrl) return;
+            
+            try {
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = mergedPdfUrl;
+                a.download = window.currentDownloadName || `Pandafun_Result_${new Date().getTime()}.pdf`;
+                
+                document.body.appendChild(a);
+                a.click();
+                
+                setTimeout(() => {
+                    document.body.removeChild(a);
+                }, 100);
+                
+                showToast('Thành công', 'Đã tải xuống tệp tin của bạn');
+            } catch (error) {
+                console.error("Download error:", error);
+                showToast('Lỗi', 'Không thể tải xuống tệp tin. Vui lòng thử lại.');
+            }
+        }
+
+        // Add event listeners for password inputs
+        document.addEventListener('DOMContentLoaded', () => {
+            const lockPassword = document.getElementById('lock-password');
+            const lockPasswordConfirm = document.getElementById('lock-password-confirm');
+            if (lockPassword) lockPassword.addEventListener('input', checkProcessButton);
+            if (lockPasswordConfirm) lockPasswordConfirm.addEventListener('input', checkProcessButton);
+            const unlockPassword = document.getElementById('unlock-password');
+            if (unlockPassword) unlockPassword.addEventListener('input', checkProcessButton);
+        });
+    </script>
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-gray-200 py-12">
+        <div class="max-w-7xl mx-auto px-4 text-center text-gray-500">
+            <p>&copy; 2026 Pandafun. Tất cả quyền được bảo lưu.</p>
+        </div>
+    </footer>
+</body>
+</html>
